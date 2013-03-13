@@ -5,12 +5,17 @@ require 'sexp_processor'
 
 class RoffeeRewriter < SexpProcessor
 	BINOP = {
-		:== => :_Req,
-		:+  => :_Rplus,
-		:-  => :_Rsub,
-		:*  => :_Rmul,
-		:/  => :_Rdiv,
-		:%  => :_Rmod,
+		:== => :eq,
+		:< => :lt,
+		:> => :gt,
+		:<= => :le,
+		:>= => :ge,
+		:+  => :plus,
+		:-  => :sub,
+		:*  => :mul,
+		:/  => :div,
+		:%  => :mod,
+		:|  => :or,
 	}
 	def initialize
 		super
@@ -31,12 +36,28 @@ class RoffeeRewriter < SexpProcessor
 		s
 	end
 
+	def process_masgn(exp)
+		l = exp.shift
+		l.each_sexp do |sexp|
+			sexp[0] = :lvar if sexp.first == :lasgn
+		end
+		l = process l
+		r = process exp.shift
+		s(:masgn, l, r)
+	end
+
 	def _process_call(exp)		
 		receiver = exp.shift
+		receiver = process receiver unless receiver.nil?
 		method = exp.shift
-		n = s(:call, receiver, method)
+		if receiver.nil? && method == :loop
+			n = s(:loop)
+		else
+			n = s(:call, receiver, method)
+		end
 		exp.delete_if do |arg|
-			n << arg
+			narg = process arg
+			n << narg
 			true
 		end
 		n
@@ -47,6 +68,9 @@ class RoffeeRewriter < SexpProcessor
 		args = process(exp.shift)
 		block = process(exp.shift) unless exp.empty?
 		block ||= nil
+		if call[1] == nil && call[2] == :loop
+			return s(:loop, block)
+		end
 		call <<= s(:defn, nil, args, block)
 		call	
 	end
@@ -104,7 +128,7 @@ class RoffeeWalker < SexpProcessor
 
 	def initialize output=nil
 		super()
-		self.strict = false
+		self.strict = true
 		self.auto_shift_type = true
 		@printer = Printer.new output
 	end
@@ -125,7 +149,17 @@ class RoffeeWalker < SexpProcessor
 	end
 
 	def process_str(exp)
-		emit '"'+exp.shift+'"'
+		emit exp.shift.inspect
+		exp
+	end
+
+	def process_gvar exp
+		emit exp.shift
+		exp
+	end
+
+	def process_break exp
+		emit "break"
 		exp
 	end
 
@@ -144,6 +178,14 @@ class RoffeeWalker < SexpProcessor
 		emit exp.shift
 		emit "="
 		process(exp.shift)
+		exp
+	end
+
+	#multi assignment
+	def process_masgn(exp)
+		process exp.shift
+		emit "="
+		process exp.shift
 		exp
 	end
 
@@ -169,7 +211,7 @@ class RoffeeWalker < SexpProcessor
 			emit "else"
 			newline
 			@printer.indent
-			process exp.shift
+			process el
 			@printer.unindent
 		end
 		newline
@@ -243,6 +285,49 @@ class RoffeeWalker < SexpProcessor
 		newline
 		exp
 	end
+
+	def process_while exp
+		emit "while"
+		cond = exp.shift
+		process cond
+		newline
+		@printer.indent
+		#body
+		process exp.shift
+		newline
+		@printer.unindent
+		#TODO
+		pre = exp.shift
+		fail "pre" if !pre
+		exp
+	end
+
+
+	def process_until exp
+		emit "until"
+		cond = exp.shift
+		process cond
+		newline
+		@printer.indent
+		process exp.shift
+		newline
+		@printer.unindent
+		#TODO
+		pre = exp.shift
+		fail "pre" if !pre
+		exp
+	end
+
+	def process_loop exp
+		emit "loop"
+		newline
+		@printer.indent
+		process exp.shift
+		newline
+		@printer.unindent
+		exp
+	end
+
 
 	private
 end

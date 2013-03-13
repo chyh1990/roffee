@@ -25,6 +25,9 @@ def foo2
 			puts i
 		end
 	end
+	3.downto(-1) do |i|
+		puts i
+	end
 end
 
 puts foo2
